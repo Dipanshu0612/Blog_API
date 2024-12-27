@@ -117,6 +117,59 @@ router.get("/my-blogs", verifyToken, async (req: MyRequest, res: Response) => {
   }
 });
 
+router.get(
+  "/my-blogs/:blog_id",
+  //@ts-ignore
+  verifyToken,
+  async (req: Request, res: Response) => {
+    try {
+      const { blog_id } = req.params;
+      if (!blog_id) {
+        res.status(400).json({
+          message: "Please provide the correct details to find the blog!",
+        });
+        return;
+      }
+      const blog = await db("blogs_data")
+        .select("*")
+        .where("blog_id", blog_id)
+        .first();
+      if (!blog) {
+        res.status(404).json({ message: `No Blog found with ID: ${blog_id}` });
+        return;
+      }
+      res.status(200).json({ blog });
+    } catch (error) {
+      res.status(500).json({ message: "Something Bad Happened :(" });
+      console.log(error);
+    }
+  }
+);
+
+router.get(
+  "/my-blogs/:blog_id/get-comments",
+  //@ts-ignore
+  verifyToken,
+  async (req: MyRequest, res: Response) => {
+    try {
+      const { blog_id } = req.params;
+      const result = await db("blog_comments")
+        .select("*")
+        .where("blog_id", blog_id);
+      if (result.length === 0) {
+        res
+          .status(404)
+          .json({ message: `No comments found for blog with ID: ${blog_id}` });
+        return;
+      }
+      res.status(200).json({ result });
+    } catch (error) {
+      res.status(500).json({ message: "Something Bad Happened :(" });
+      console.log(error);
+    }
+  }
+);
+
 router.post(
   "/create-blog",
   //@ts-ignore
@@ -152,7 +205,7 @@ router.post(
 );
 
 router.put(
-  "/update/:blog_id",
+  "/update-blog/:blog_id",
   //@ts-ignore
   verifyToken,
   async (req: MyRequest, res: Response) => {
@@ -164,6 +217,7 @@ router.put(
         .status(404)
         .json({ message: `Blog with ID: ${blog_id} does not exist!` });
     }
+    // console.log(blog);
     if (blog[0]?.user_id !== user_id) {
       res.status(403).json({
         message: `User with ID: ${user_id} does not have access to edit the blog with ID: ${blog_id}`,
@@ -171,6 +225,10 @@ router.put(
       return;
     }
     const { blog_title, blog_content } = req.body;
+    if (blog_title === undefined && blog_content === undefined) {
+      res.status(400).json({ message: "Please provide details to update the blog!" });
+      return;
+    }
     if (blog_title !== undefined) {
       const result = await db("blogs_data")
         .update({ blog_title })
@@ -201,33 +259,173 @@ router.delete(
   verifyToken,
   async (req: MyRequest, res: Response) => {
     try {
-    const { blog_id } = req.params;
-    const blogUser = await db("blogs_data")
-      .select("user_id")
-      .where("blog_id", blog_id).first();
-    if (!blogUser) {
-      res.status(404).json({ message: `No Blog found with ID: ${blog_id}` });
-      return;
-    }
-    const user_id = req.user?.user_id;
-    if (blogUser.user_id !== user_id) {
-      res
-        .send(403)
-        .json({
+      const { blog_id } = req.params;
+      const blogUser = await db("blogs_data")
+        .select("user_id")
+        .where("blog_id", blog_id)
+        .first();
+      if (!blogUser) {
+        res.status(404).json({ message: `No Blog found with ID: ${blog_id}` });
+        return;
+      }
+      const user_id = req.user?.user_id;
+      if (blogUser.user_id !== user_id) {
+        res.status(403).json({
           message: `User with ID: ${user_id} does not have access to blog with ID: ${blog_id}`,
         });
-      return;
-    }
-    await db("blogs_data").select("*").where("blog_id", blog_id).del();
-    res.status(200).json({ message: "Blog deleted successfully!" });
-  
+        return;
+      }
+      await db("blogs_data").select("*").where("blog_id", blog_id).del();
+      res.status(200).json({ message: "Blog deleted successfully!" });
     } catch (error) {
-       res.status(500).json({ message: "Something Bad Happened :(" });
-       console.log(error);      
+      res.status(500).json({ message: "Something Bad Happened :(" });
+      console.log(error);
     }
-    
   }
 );
 
+router.get("/view-blog/:blog_id", async (req: Request, res: Response) => {
+  try {
+    const { blog_id } = req.params;
+    if (!blog_id) {
+      res.status(400).json({
+        message: "Please provide the correct details to find the blog!",
+      });
+      return;
+    }
+    const blog = await db("blogs_data")
+      .select("*")
+      .where("blog_id", blog_id)
+      .first();
+    if (!blog) {
+      res.status(404).json({ message: `No Blog found with ID: ${blog_id}` });
+      return;
+    }
+    res.status(200).json({ blog });
+  } catch (error) {
+    res.status(500).json({ message: "Something Bad Happened :(" });
+    console.log(error);
+  }
+});
+
+router.post(
+  "/view-blog/:blog_id/comment",
+  //@ts-ignore
+  verifyToken,
+  async (req: MyRequest, res: Response) => {
+    try {
+      const user_id = req.user?.user_id;
+      const { comment } = req.body;
+      const { blog_id } = req.params;
+      if (!comment) {
+        res.status(400).json({ message: "Please provide a comment!" });
+        return;
+      }
+      await db("blog_comments").insert({ blog_id, user_id, comment });
+      res.status(200).json({ message: "Comment added sucessfully!" });
+    } catch (error) {
+      res.status(500).json({ message: "Something Bad Happened :(" });
+      console.log(error);
+    }
+  }
+);
+
+router.get(
+  "/view-blog/:blog_id/get-comments",
+  //@ts-ignore
+  verifyToken,
+  async (req: MyRequest, res: Response) => {
+    try {
+      const { blog_id } = req.params;
+      const result = await db("blog_comments")
+        .select("*")
+        .where("blog_id", blog_id);
+      if (result.length === 0) {
+        res
+          .status(404)
+          .json({ message: `No comments found for blog with ID: ${blog_id}` });
+        return;
+      }
+      res.status(200).json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Something Bad Happened :(" });
+      console.log(error);
+    }
+  }
+);
+
+router.get(
+  "/view-blog/:blog_id/like",
+  //@ts-ignore  
+  verifyToken,
+  async (req: MyRequest, res: Response) => {
+    try {
+      const { blog_id } = req.params;
+      const user_id = req.user?.user_id;
+
+      if (!blog_id) {
+        res.status(400).json({
+          message: "Please provide the correct details to find the blog!",
+        });
+        return;
+      }
+      const blog = await db("blogs_data")
+        .select("*")
+        .where("blog_id", blog_id)
+        .first();
+      if (!blog) {
+        res.status(404).json({ message: `No Blog found with ID: ${blog_id}` });
+        return;
+      }
+      const alreadyLiked = await db("blog_likes").select("user_id").where("user_id", user_id).first();
+      if (alreadyLiked) {
+        res.status(400).json({ message: "You have already liked the post!" });
+        return;
+      }
+      await db("blog_likes").insert({ blog_id, user_id });
+      res.status(200).json({ message: "Blog liked sucessfully!" });
+    } catch (error) {
+      res.status(500).json({ message: "Something Bad Happened :(" });
+      console.log(error);
+    }
+  }
+);
+
+router.get(
+  "/view-blog/:blog_id/unlike",
+  //@ts-ignore
+  verifyToken,
+  async (req: MyRequest, res: Response) => {
+    try {
+      const { blog_id } = req.params;
+      const user_id = req.user?.user_id;
+
+      if (!blog_id) {
+        res.status(400).json({
+          message: "Please provide the correct details to find the blog!",
+        });
+        return;
+      }
+      const blog = await db("blogs_data")
+        .select("*")
+        .where("blog_id", blog_id)
+        .first();
+      if (!blog) {
+        res.status(404).json({ message: `No Blog found with ID: ${blog_id}` });
+        return;
+      }
+      const result = await db("blog_likes").select("*").where("blog_id", blog_id).where("user_id", user_id).first();
+      if (!result) {
+        res.status(404).json({ message: `User with ID: ${user_id} has not liked the blog with ID: ${blog_id}!` });
+        return;
+      }
+      await db("blog_likes").select("*").where("blog_id", blog_id).where("user_id", user_id).del();
+      res.status(200).json({ message: "Blog unliked sucessfully!" });
+    } catch (error) {
+      res.status(500).json({ message: "Something Bad Happened :(" });
+      console.log(error);
+    }
+  }
+);
 
 export default router;
