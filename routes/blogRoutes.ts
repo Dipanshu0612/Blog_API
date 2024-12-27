@@ -3,6 +3,7 @@ import dbs from "../database/db.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { configDotenv } from "dotenv";
+import verifyToken from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 const { db, checkConnection } = dbs;
@@ -17,6 +18,9 @@ type LoginUserData = {
   user_id: number;
   password: string;
 };
+interface MyRequest extends Request {
+  user?: any;
+}
 
 checkConnection();
 
@@ -82,17 +86,148 @@ router.post("/login", async (req: Request, res: Response) => {
 });
 
 router.get("/all-blogs", async (req: Request, res: Response) => {
-    try {
-        const result = await db("blogs_data").select("*");
-        if (result.length === 0) {
-            res.status(404).json({ message: "No blogs found!" });
-            return;
-        }
-        res.status(200).json(result);
-    } catch (error) {
-        res.status(500).json({ message: "Something Bad Happened :(" });
-        console.log(error);
+  try {
+    const result = await db("blogs_data").select("*");
+    if (result.length === 0) {
+      res.status(404).json({ message: "No blogs found!" });
+      return;
     }
-})
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ message: "Something Bad Happened :(" });
+    console.log(error);
+  }
+});
+
+//@ts-ignore
+router.get("/my-blogs", verifyToken, async (req: MyRequest, res: Response) => {
+  try {
+    const user_id = req.user?.user_id;
+    const result = await db("blogs_data").select("*").where("user_id", user_id);
+    if (result.length === 0) {
+      res
+        .status(404)
+        .json({ message: `User with ID: ${user_id} has no blogs!` });
+      return;
+    }
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ message: "Something Bad Happened :(" });
+    console.log(error);
+  }
+});
+
+router.post(
+  "/create-blog",
+  //@ts-ignore
+  verifyToken,
+  async (req: Request, res: Response) => {
+    try {
+      const { user_id, blog_title, blog_content } = req.body;
+      if (!user_id || !blog_title || !blog_content) {
+        res
+          .status(400)
+          .json({ message: "Please provide all the fields to add the blog!" });
+        return;
+      }
+      const result = await db("blogs_data").insert({
+        user_id,
+        blog_title,
+        blog_content,
+      });
+      if (!result) {
+        res.status(500).json({
+          message: "Could not add blog! Please try again.",
+        });
+        return;
+      }
+      res
+        .status(200)
+        .json({ message: "Blog added succesfully!", blog_id: result[0] });
+    } catch (error) {
+      res.status(500).json({ message: "Something Bad Happened :(" });
+      console.log(error);
+    }
+  }
+);
+
+router.put(
+  "/update/:blog_id",
+  //@ts-ignore
+  verifyToken,
+  async (req: MyRequest, res: Response) => {
+    const { blog_id } = req.params;
+    const user_id = req.user?.user_id;
+    const blog = await db("blogs_data").select("*").where("blog_id", blog_id);
+    if (blog.length === 0) {
+      res
+        .status(404)
+        .json({ message: `Blog with ID: ${blog_id} does not exist!` });
+    }
+    if (blog[0]?.user_id !== user_id) {
+      res.status(403).json({
+        message: `User with ID: ${user_id} does not have access to edit the blog with ID: ${blog_id}`,
+      });
+      return;
+    }
+    const { blog_title, blog_content } = req.body;
+    if (blog_title !== undefined) {
+      const result = await db("blogs_data")
+        .update({ blog_title })
+        .where("blog_id", blog_id);
+      if (result === 0) {
+        res.status(400).json({ message: "Failed to update the blog!" });
+        return;
+      }
+      res.status(200).json({ message: "Blog updated successfully" });
+    }
+
+    if (blog_content !== undefined) {
+      const result = await db("blogs_data")
+        .update({ blog_content })
+        .where("blog_id", blog_id);
+      if (result === 0) {
+        res.status(400).json({ message: "Failed to update the blog!" });
+        return;
+      }
+      res.status(200).json({ message: "Blog updated successfully" });
+    }
+  }
+);
+
+router.delete(
+  "/delete-blog/:blog_id",
+  //@ts-ignore
+  verifyToken,
+  async (req: MyRequest, res: Response) => {
+    try {
+    const { blog_id } = req.params;
+    const blogUser = await db("blogs_data")
+      .select("user_id")
+      .where("blog_id", blog_id).first();
+    if (!blogUser) {
+      res.status(404).json({ message: `No Blog found with ID: ${blog_id}` });
+      return;
+    }
+    const user_id = req.user?.user_id;
+    if (blogUser.user_id !== user_id) {
+      res
+        .send(403)
+        .json({
+          message: `User with ID: ${user_id} does not have access to blog with ID: ${blog_id}`,
+        });
+      return;
+    }
+    await db("blogs_data").select("*").where("blog_id", blog_id).del();
+    res.status(200).json({ message: "Blog deleted successfully!" });
+  
+    } catch (error) {
+       res.status(500).json({ message: "Something Bad Happened :(" });
+       console.log(error);      
+    }
+    
+  }
+);
+
 
 export default router;
